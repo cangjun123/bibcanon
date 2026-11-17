@@ -1,0 +1,53 @@
+% =========================================================
+% Comprehensive End-to-End Test Bibliography for bibcanon
+% =========================================================
+
+@string{cvpr = "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"}
+
+% 1. Published CVPR paper with subsequent TPAMI journal extension (Respect Original Venue Intent)
+@inproceedings{he2022mae_conf,
+  title = {Masked Autoencoders Are Scalable Vision Learners},
+  author = {He, Kaiming and Chen, Xinlei and Xie, Saining},
+  booktitle = cvpr,
+  year = {2022}
+}
+
+% 2. Duplicate of the same MAE paper under a different cite_key
+@article{mae_duplicate_entry,
+  title = {Masked Autoencoders Are Scalable Vision Learners},
+  author = {He, Kaiming and others},
+  journal = {arXiv preprint arXiv:2111.06377},
+  year = {2021}
+}
+
+% 3. arXiv preprint ready to upgrade to ICLR 2022
+@article{hu2021lora,
+  title = {LoRA: Low-Rank Adaptation of Large Language Models},
+  author = {Hu, Edward J. and Shen, Yelong},
+  journal = {arXiv preprint arXiv:2106.09685},
+  year = {2021}
+}
+
+% 4. Pure unpublished arXiv preprint -> Official @misc format
+@article{kirillov2023sam,
+  title = {Segment Anything},
+  author = {Kirillov, Alexander and Mintun, Eric},
+  journal = {arXiv:2304.02643},
+  year = {2023}
+}
+
+% 5. Standard published ICML paper via PMLR
+@inproceedings{smith2024vit,
+  title = {Scaling Vision Transformers},
+  author = {Smith, Alice and Bob, Charlie},
+  booktitle = {ICML},
+  year = {2024}
+}
+
+% 6. Hallucinated fake paper
+@inproceedings{ghost2025fake,
+  title = {Quantum Telepathic Hyper-Networks for 5D Vision},
+  author = {Ghost, Nobody and Phantom, Zero},
+  booktitle = {CVPR},
+  year = {2025}
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import threading
 import webbrowser
 from pathlib import Path
@@ -148,6 +149,19 @@ def _print_audit_summary_table(results: list[EntryAuditResult]) -> None:
     )
 
 
+def _find_available_port(host: str, preferred_port: int, max_tries: int = 20) -> int:
+    """Return `preferred_port` if bindable, otherwise step upward to the next free port."""
+    for offset in range(max_tries):
+        candidate = preferred_port + offset
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind((host, candidate))
+                return candidate
+            except OSError:
+                continue
+    return preferred_port
+
+
 @app.command("serve")
 def serve_cmd(
     bib_file: Annotated[
@@ -176,7 +190,13 @@ def serve_cmd(
             raise typer.Exit(code=2)
         resolved_bib = str(p)
 
-    url = f"http://{host}:{port}"
+    actual_port = _find_available_port(host, port)
+    if actual_port != port:
+        console.print(
+            f"[yellow]提示:[/yellow] 端口 {port} 已被占用，自动切换至可用端口 [bold]{actual_port}[/bold]"
+        )
+
+    url = f"http://{host}:{actual_port}"
     console.print(f"[bold green]bibcanon Web 工作台启动中:[/bold green] {url}")
     if resolved_bib:
         console.print(f"[cyan]自动加载本地文件:[/cyan] {resolved_bib}")
@@ -185,7 +205,7 @@ def serve_cmd(
         threading.Timer(0.9, lambda: webbrowser.open(url)).start()
 
     fastapi_app = create_app(initial_bib_path=resolved_bib)
-    uvicorn.run(fastapi_app, host=host, port=port, log_level="warning")
+    uvicorn.run(fastapi_app, host=host, port=actual_port, log_level="warning")
 
 
 @app.command("check")

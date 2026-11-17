@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from bibcanon.models import AppConfig
@@ -14,10 +15,17 @@ def get_bibcanon_home() -> Path:
     env_override = os.environ.get("BIBCANON_HOME")
     if env_override:
         home = Path(env_override).expanduser().resolve()
-    else:
-        home = Path.home() / ".bibcanon"
-    home.mkdir(parents=True, exist_ok=True)
-    return home
+        home.mkdir(parents=True, exist_ok=True)
+        return home
+
+    home = Path.home() / ".bibcanon"
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+        return home
+    except OSError:
+        fallback = Path(tempfile.gettempdir()) / "bibcanon"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def get_config_path() -> Path:
