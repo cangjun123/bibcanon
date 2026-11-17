@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
+import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -48,6 +50,32 @@ class _DomainLimiter:
                 self._next_allowed_time = now + self.policy.min_interval_sec
         if delay > 0:
             await asyncio.sleep(delay)
+
+
+def _detect_effective_proxy(config: AppConfig, allow_system_fallback: bool) -> str | None:
+    """Resolve explicit proxy_url, or fall back to Windows/OS system proxy when env vars are unset."""
+    if config.proxy_url.strip():
+        return config.proxy_url.strip()
+    if not allow_system_fallback:
+        return None
+    if any(
+        os.environ.get(k)
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+    ):
+        # Let httpx(trust_env=True) handle standard proxy env vars
+        return None
+    try:
+        sys_proxies = urllib.request.getproxies()
+        raw = (sys_proxies.get("http") or sys_proxies.get("https") or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("https://127.0.0.1:") or raw.startswith("https://localhost:"):
+            raw = "http://" + raw[len("https://") :]
+        elif "://" not in raw:
+            raw = f"http://{raw}"
+        return raw
+    except Exception:
+        return None
 
 
 def _build_domain_policies(config: AppConfig) -> dict[str, DomainPolicy]:
@@ -101,7 +129,7 @@ class RateLimitedHttpClient:
         self._default_policy = DomainPolicy(max_concurrency=3, min_interval_sec=0.2)
         self._limiters: dict[str, _DomainLimiter] = {}
 
-        proxy = self.config.proxy_url.strip() or None
+        proxy = _detect_effective_proxy(self.config, allow_system_fallback=enable_rate_sleep)
         self._client = httpx.AsyncClient(
             trust_env=True,
             follow_redirects=True,
