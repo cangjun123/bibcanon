@@ -15,7 +15,9 @@ from bibcanon import __version__
 from bibcanon.server.routes import JobManager, router
 from bibcanon.storage.cache import BibCache
 
-# Guard against Windows Registry HKCR\.js "Content Type" = "text/plain" breaking ES module scripts
+# Initialize mimetypes first so Windows Registry (`HKCR\.js = text/plain`) is loaded,
+# then override standard web asset MIME types so ES module scripts always execute.
+mimetypes.init()
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
@@ -57,6 +59,10 @@ def create_app(
 
     static_dir = get_static_dir()
     assets_dir = static_dir / "assets"
+    mimetypes.init()
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/javascript", ".mjs")
+    mimetypes.add_type("text/css", ".css")
     if assets_dir.exists() and assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 

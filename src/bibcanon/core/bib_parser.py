@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import re
 import shutil
 from pathlib import Path
 
 import bibtexparser
 from bibtexparser.bparser import BibTexParser
+
+# Silence verbose "Overwriting existing string for key: ..." logs on IEEE/CVPR @String headers
+logging.getLogger("bibtexparser").setLevel(logging.ERROR)
 
 from bibcanon.core.formatter import format_bibtex_entry, rekey_raw_bibtex
 from bibcanon.models import (
