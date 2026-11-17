@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from bibcanon import __version__
 from bibcanon.server.routes import JobManager, router
 from bibcanon.storage.cache import BibCache
+
+# Guard against Windows Registry HKCR\.js "Content Type" = "text/plain" breaking ES module scripts
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("application/json", ".json")
+mimetypes.add_type("application/wasm", ".wasm")
 
 
 def get_static_dir() -> Path:

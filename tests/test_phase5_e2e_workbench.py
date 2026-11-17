@@ -331,8 +331,12 @@ def test_phase5_bundled_frontend_and_comprehensive_bib_workflow(
             js_match = re.search(r'src="(/assets/index-[^"]+\.js)"', index_res.text)
             css_match = re.search(r'href="(/assets/index-[^"]+\.css)"', index_res.text)
             assert js_match is not None and css_match is not None
-            assert client.get(js_match.group(1)).status_code == 200
-            assert client.get(css_match.group(1)).status_code == 200
+            js_res = client.get(js_match.group(1))
+            css_res = client.get(css_match.group(1))
+            assert js_res.status_code == 200
+            assert "javascript" in js_res.headers.get("content-type", "").lower()
+            assert css_res.status_code == 200
+            assert "text/css" in css_res.headers.get("content-type", "").lower()
 
             # 2. Verify /api/bootstrap exposes initial_bib_path from `bibcanon serve <file.bib>`
             boot = client.get("/api/bootstrap").json()
