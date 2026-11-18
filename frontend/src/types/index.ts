@@ -24,12 +24,10 @@ export type WarningSeverity = "error" | "warning" | "info";
 
 export type FilterTab =
   | "all"
-  | "hallucination"
-  | "mismatch"
+  | "attention"
   | "upgrade"
   | "updatable"
-  | "identical"
-  | "duplicate";
+  | "identical";
 
 export interface AuditWarning {
   code: WarningCode;

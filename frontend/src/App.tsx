@@ -14,6 +14,7 @@ import {
 } from "./api/client";
 import { DiffWorkbench } from "./components/DiffWorkbench";
 import { EntryList } from "./components/EntryList";
+import { ImportModal } from "./components/ImportModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TopToolbar } from "./components/TopToolbar";
 import {
@@ -51,6 +52,7 @@ export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [sourcePath, setSourcePath] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export const App: React.FC = () => {
       setToast({ text, tone });
       window.setTimeout(() => {
         setToast((prev) => (prev?.text === text ? null : prev));
-      }, 4500);
+      }, 4000);
     },
     []
   );
@@ -141,7 +143,7 @@ export const App: React.FC = () => {
             },
             onJobCancelled: ({ completed, total }) => {
               setIsScanning(false);
-              showToast(`已中止扫描（已完成 ${completed}/${total} 条）`, "info");
+              showToast(`扫描已停止（已完成 ${completed}/${total} 条）`, "info");
             },
             onError: () => {
               setIsScanning(false);
@@ -180,13 +182,17 @@ export const App: React.FC = () => {
 
   const matchesFilterTab = useCallback(
     (entry: EntryAuditResult, tab: FilterTab): boolean => {
+      const hasDup = entry.warnings.some((w) => w.code === "DUPLICATE_IN_BIB");
       switch (tab) {
         case "all":
           return true;
-        case "hallucination":
-          return entry.status === "SUSPECTED_HALLUCINATION";
-        case "mismatch":
-          return entry.status === "METADATA_MISMATCH" || entry.status === "ERROR";
+        case "attention":
+          return (
+            entry.status === "SUSPECTED_HALLUCINATION" ||
+            entry.status === "METADATA_MISMATCH" ||
+            entry.status === "ERROR" ||
+            hasDup
+          );
         case "upgrade":
           return entry.status === "PREPRINT_UPGRADE";
         case "updatable":
@@ -201,8 +207,6 @@ export const App: React.FC = () => {
               entry.status === "VERIFIED_PREPRINT_ONLY") &&
             isEntryAlreadyIdentical(entry, styleMode, protectTitleCase)
           );
-        case "duplicate":
-          return entry.warnings.some((w) => w.code === "DUPLICATE_IN_BIB");
       }
     },
     [styleMode, protectTitleCase]
@@ -211,20 +215,16 @@ export const App: React.FC = () => {
   const filterCounts = useMemo<Record<FilterTab, number>>(() => {
     const counts: Record<FilterTab, number> = {
       all: entries.length,
-      hallucination: 0,
-      mismatch: 0,
+      attention: 0,
       upgrade: 0,
       updatable: 0,
       identical: 0,
-      duplicate: 0,
     };
     for (const e of entries) {
-      if (matchesFilterTab(e, "hallucination")) counts.hallucination++;
-      if (matchesFilterTab(e, "mismatch")) counts.mismatch++;
+      if (matchesFilterTab(e, "attention")) counts.attention++;
       if (matchesFilterTab(e, "upgrade")) counts.upgrade++;
       if (matchesFilterTab(e, "updatable")) counts.updatable++;
       if (matchesFilterTab(e, "identical")) counts.identical++;
-      if (matchesFilterTab(e, "duplicate")) counts.duplicate++;
     }
     return counts;
   }, [entries, matchesFilterTab]);
@@ -252,16 +252,24 @@ export const App: React.FC = () => {
     });
   }, [entries, activeFilter, searchQuery, matchesFilterTab]);
 
-  // Keyboard up/down navigation in left list
+  // Keyboard up/down navigation
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || settingsOpen) return;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        settingsOpen ||
+        importModalOpen
+      )
+        return;
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       if (filteredEntries.length === 0) return;
 
       e.preventDefault();
-      const idx = filteredEntries.findIndex((item) => item.cite_key === selectedKey);
+      const idx = filteredEntries.findIndex(
+        (item) => item.cite_key === selectedKey
+      );
       if (e.key === "ArrowDown") {
         const next =
           idx < 0
@@ -269,14 +277,13 @@ export const App: React.FC = () => {
             : filteredEntries[Math.min(filteredEntries.length - 1, idx + 1)];
         setSelectedKey(next.cite_key);
       } else if (e.key === "ArrowUp") {
-        const prev =
-          idx <= 0 ? filteredEntries[0] : filteredEntries[idx - 1];
+        const prev = idx <= 0 ? filteredEntries[0] : filteredEntries[idx - 1];
         setSelectedKey(prev.cite_key);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filteredEntries, selectedKey, settingsOpen]);
+  }, [filteredEntries, selectedKey, settingsOpen, importModalOpen]);
 
   const selectedEntry = useMemo(
     () => entries.find((e) => e.cite_key === selectedKey) ?? null,
@@ -336,7 +343,7 @@ export const App: React.FC = () => {
     }
     setDecisions(nextDecisions);
     setUserTouchedKeys(touched);
-    showToast(`已选中 ${count} 条高置信度可更新条目（存疑条目已跳过）`, "success");
+    showToast(`已勾选 ${count} 条高置信度更新（存疑条目已跳过）`, "success");
   };
 
   const acceptedCount = useMemo(() => {
@@ -371,7 +378,7 @@ export const App: React.FC = () => {
       });
       await navigator.clipboard.writeText(res.output_bibtex);
       showToast(
-        `已复制完整 .bib 全文（采纳 ${
+        `已复制完整 .bib（更新 ${
           res.stats.accepted_count + res.stats.custom_count
         } 条，原样保留 ${res.stats.kept_original_count} 条）`,
         "success"
@@ -415,10 +422,7 @@ export const App: React.FC = () => {
         target_bib_path: sourcePath,
         decisions: buildDecisionsMap(),
       });
-      showToast(
-        `已写回本地文件！原文件已自动备份至: ${res.backup_path}`,
-        "success"
-      );
+      showToast(`已写回原文件，备份已保存至: ${res.backup_path}`, "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "写回本地文件失败", "error");
     }
@@ -459,33 +463,39 @@ export const App: React.FC = () => {
         custom_bibtex: null,
       },
     }));
-    showToast(`已锁死 ${citeKey} 并合并外部 BibTeX`, "success");
+    showToast(`已合并外部 BibTeX 并锁死键值 ${citeKey}`, "success");
   };
 
+  const hasEntries = entries.length > 0;
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={async (e) => {
+        const f = e.dataTransfer.files?.[0];
+        if (f && (f.name.endsWith(".bib") || f.type.startsWith("text"))) {
+          e.preventDefault();
+          const text = await f.text();
+          launchJob({ bib_content: text, force_refresh: false });
+          setImportModalOpen(false);
+        }
+      }}
+      className="flex h-screen flex-col overflow-hidden bg-[#F8FAFC] text-slate-900"
+    >
       <TopToolbar
         isScanning={isScanning}
         progress={progress}
         sourcePath={sourcePath}
-        activeFilter={activeFilter}
-        filterCounts={filterCounts}
         styleMode={styleMode}
         protectTitleCase={protectTitleCase}
-        hasEntries={entries.length > 0}
+        hasEntries={hasEntries}
         acceptedCount={acceptedCount}
-        onStartScanContent={(content, force) =>
-          launchJob({ bib_content: content, force_refresh: force })
-        }
-        onStartScanPath={(path, force) =>
-          launchJob({ bib_path: path, force_refresh: force })
-        }
+        onOpenImport={() => setImportModalOpen(true)}
         onCancelScan={() => {
           if (jobId) cancelScanJob(jobId);
           if (unsubRef.current) unsubRef.current();
           setIsScanning(false);
         }}
-        onChangeFilter={setActiveFilter}
         onChangeStyleMode={setStyleMode}
         onToggleProtectTitleCase={setProtectTitleCase}
         onBatchAcceptHighConfidence={handleBatchAcceptHighConfidence}
@@ -500,53 +510,81 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Main Split Workspace: Left 32% List + Right 68% Diff Workbench */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-[32%] min-w-[300px] max-w-[460px] h-full">
-          <EntryList
-            entries={filteredEntries}
-            selectedKey={selectedKey}
-            searchQuery={searchQuery}
-            decisions={decisions}
-            onSearchChange={setSearchQuery}
-            onSelectEntry={setSelectedKey}
-            onToggleDecision={(entry, checked) =>
-              updateDecision(entry.cite_key, {
-                decision: checked ? "accept" : "keep_original",
-              })
-            }
-          />
-        </div>
+      {!hasEntries ? (
+        <ImportModal
+          isModal={false}
+          open={true}
+          initialPath={sourcePath}
+          isScanning={isScanning}
+          onStartScanContent={(content, force) =>
+            launchJob({ bib_content: content, force_refresh: force })
+          }
+          onStartScanPath={(path, force) =>
+            launchJob({ bib_path: path, force_refresh: force })
+          }
+        />
+      ) : (
+        <div className="flex flex-1 overflow-hidden">
+          <div className="w-[31%] min-w-[290px] max-w-[420px] h-full">
+            <EntryList
+              entries={filteredEntries}
+              selectedKey={selectedKey}
+              activeFilter={activeFilter}
+              filterCounts={filterCounts}
+              searchQuery={searchQuery}
+              decisions={decisions}
+              onChangeFilter={setActiveFilter}
+              onSearchChange={setSearchQuery}
+              onSelectEntry={setSelectedKey}
+              onToggleDecision={(entry, checked) =>
+                updateDecision(entry.cite_key, {
+                  decision: checked ? "accept" : "keep_original",
+                })
+              }
+            />
+          </div>
 
-        <div className="flex-1 h-full overflow-hidden">
-          <DiffWorkbench
-            entry={selectedEntry}
-            decisionPayload={
-              selectedEntry ? decisions[selectedEntry.cite_key] : undefined
-            }
-            styleMode={styleMode}
-            protectTitleCase={protectTitleCase}
-            onUpdateDecision={updateDecision}
-            onRetryEntry={handleRetryEntry}
-            onPasteMerge={handlePasteMerge}
-            onJumpToEntry={(targetKey) => {
-              setActiveFilter("all");
-              setSearchQuery("");
-              setSelectedKey(targetKey);
-            }}
-          />
+          <div className="flex-1 h-full overflow-hidden">
+            <DiffWorkbench
+              entry={selectedEntry}
+              decisionPayload={
+                selectedEntry ? decisions[selectedEntry.cite_key] : undefined
+              }
+              styleMode={styleMode}
+              protectTitleCase={protectTitleCase}
+              onUpdateDecision={updateDecision}
+              onRetryEntry={handleRetryEntry}
+              onPasteMerge={handlePasteMerge}
+              onJumpToEntry={(targetKey) => {
+                setActiveFilter("all");
+                setSearchQuery("");
+                setSelectedKey(targetKey);
+              }}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Toast Notification */}
+      <ImportModal
+        isModal={true}
+        open={importModalOpen}
+        initialPath={sourcePath}
+        isScanning={isScanning}
+        onClose={() => setImportModalOpen(false)}
+        onStartScanContent={(content, force) =>
+          launchJob({ bib_content: content, force_refresh: force })
+        }
+        onStartScanPath={(path, force) =>
+          launchJob({ bib_path: path, force_refresh: force })
+        }
+      />
+
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 rounded-lg border px-4 py-2.5 text-xs font-medium shadow-lg transition ${
-            toast.tone === "success"
-              ? "border-emerald-300 bg-emerald-900 text-white"
-              : toast.tone === "error"
-              ? "border-rose-300 bg-rose-900 text-white"
-              : "border-slate-700 bg-slate-900 text-white"
+          className={`fixed bottom-5 right-5 z-50 rounded-xl px-4 py-2.5 text-xs font-medium shadow-lg transition ${
+            toast.tone === "error"
+              ? "bg-rose-600 text-white"
+              : "bg-slate-900 text-white"
           }`}
         >
           {toast.text}
@@ -561,7 +599,7 @@ export const App: React.FC = () => {
         onSave={async (newCfg) => {
           const saved = await saveSettings(newCfg);
           setConfig(saved);
-          showToast("全局设置已保存", "success");
+          showToast("设置已保存", "success");
         }}
         onClearCache={async (scope) => {
           const res = await clearCacheApi(scope);

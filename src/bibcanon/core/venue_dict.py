@@ -22,6 +22,15 @@ def _compile_patterns(*raw_patterns: str) -> tuple[re.Pattern[str], ...]:
     return tuple(re.compile(p, re.IGNORECASE) for p in raw_patterns)
 
 
+def _clean_venue_for_match(venue_text: str | None) -> str:
+    """Strip LaTeX protective braces (e.g. '{A}ssociation') and escapes before regex matching."""
+    if not venue_text:
+        return ""
+    cleaned = venue_text.replace("{", "").replace("}", "")
+    cleaned = cleaned.replace(r"\&", "&")
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 WORKSHOP_KEYWORDS_RE = re.compile(
     r"\b(?:"
     r"workshops?|cvprw|iccvw|eccvw|icmlw|neuripsw|nipsw|iclrw|aaaiw|aclw|emnlpw|"
@@ -210,6 +219,90 @@ VENUE_ENTRIES: tuple[VenueEntry, ...] = (
             r"european\s+conference\s+on\s+artificial\s+intelligence",
         ),
     ),
+    VenueEntry(
+        canonical_id="COLM",
+        compact_abbr="COLM",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bcolm\b",
+            r"conference\s+on\s+language\s+modeling",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ACCV",
+        compact_abbr="ACCV",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\baccv\b",
+            r"asian\s+conference\s+on\s+computer\s+vision",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ICPR",
+        compact_abbr="ICPR",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bicpr\b",
+            r"international\s+conference\s+on\s+pattern\s+recognition",
+            r"int\.\s*conf\.\s*pattern\s*recog",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ICIP",
+        compact_abbr="ICIP",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bicip\b",
+            r"international\s+conference\s+on\s+image\s+processing",
+            r"int\.\s*conf\.\s*image\s*process",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ICME",
+        compact_abbr="ICME",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bicme\b",
+            r"international\s+conference\s+on\s+multimedia\s+and\s+expo",
+            r"int\.\s*conf\.\s*multimedia\s+and\s+expo",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ICDAR",
+        compact_abbr="ICDAR",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bicdar\b",
+            r"document\s+analysis\s+and\s+recognition",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="ICFHR",
+        compact_abbr="ICFHR",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bicfhr\b",
+            r"frontiers\s+in\s+handwriting\s+recognition",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="CHI",
+        compact_abbr="CHI",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\bchi\s+conference\b",
+            r"human\s+factors\s+in\s+computing\s+systems",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="UIST",
+        compact_abbr="UIST",
+        tier="MAIN_CONF",
+        patterns=_compile_patterns(
+            r"\buist\b",
+            r"user\s+interface\s+software\s+and\s+technology",
+        ),
+    ),
     # --- NLP Conferences ---
     VenueEntry(
         canonical_id="NAACL",
@@ -217,7 +310,7 @@ VENUE_ENTRIES: tuple[VenueEntry, ...] = (
         tier="MAIN_CONF",
         patterns=_compile_patterns(
             r"\bnaacl\b",
-            r"north\s+american\s+chapter\s+of\s+the\s+association\s+for\s+computational\s+linguistics",
+            r"(?:north\s+american|nations\s+of\s+the\s+americas)\s+chapter\s+of\s+the\s+association\s+for\s+computational\s+linguistics",
         ),
     ),
     VenueEntry(
@@ -525,6 +618,70 @@ VENUE_ENTRIES: tuple[VenueEntry, ...] = (
             r"^science$",
         ),
     ),
+    VenueEntry(
+        canonical_id="RA-L",
+        compact_abbr="IEEE RA-L",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"\bra-l\b",
+            r"robotics\s+and\s+automation\s+letters",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="T-RO",
+        compact_abbr="IEEE T-RO",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"\bt-ro\b",
+            r"ieee\s+transactions\s+on\s+robotics",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="IMWUT",
+        compact_abbr="Proc. ACM IMWUT",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"\bimwut\b",
+            r"interact\.\s*mob\.\s*wearable\s*ubiquitous\s*technol",
+            r"interactive,\s*mobile,\s*wearable\s+and\s+ubiquitous\s+technologies",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="CGF",
+        compact_abbr="Comput. Graph. Forum",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"computer\s+graphics\s+forum",
+            r"comput\.\s*graph\.\s*forum",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="TVC",
+        compact_abbr="Vis. Comput.",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"^the\s+visual\s+computer$",
+            r"the\s+vis\.\s*comput",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="IJDAR",
+        compact_abbr="IJDAR",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"\bijdar\b",
+            r"international\s+journal\s+on\s+document\s+analysis\s+and\s+recognition",
+        ),
+    ),
+    VenueEntry(
+        canonical_id="SPL",
+        compact_abbr="IEEE SPL",
+        tier="JOURNAL",
+        patterns=_compile_patterns(
+            r"signal\s+processing\s+letters",
+            r"sign\.\s*process\.\s*letters",
+        ),
+    ),
 )
 
 VENUE_BY_ID: dict[str, VenueEntry] = {v.canonical_id: v for v in VENUE_ENTRIES}
@@ -588,6 +745,7 @@ PROTECTED_PROPER_NOUNS: dict[str, str] = {
         "Moore",
         "Penrose",
         "Turing",
+        "Nash",
         "Boolean",
         "Transformer",
         "Transformers",
@@ -611,16 +769,18 @@ PROTECTED_PROPER_NOUNS: dict[str, str] = {
 
 def is_workshop_venue(venue_text: str | None) -> bool:
     """Return True if the venue string contains workshop/companion/demo indicators."""
-    if not venue_text:
+    cleaned = _clean_venue_for_match(venue_text)
+    if not cleaned:
         return False
-    return bool(WORKSHOP_KEYWORDS_RE.search(venue_text))
+    return bool(WORKSHOP_KEYWORDS_RE.search(cleaned))
 
 
 def is_preprint_venue(venue_text: str | None) -> bool:
     """Return True if the venue string denotes a preprint server or tech report."""
-    if not venue_text:
+    cleaned = _clean_venue_for_match(venue_text)
+    if not cleaned:
         return False
-    return bool(PREPRINT_KEYWORDS_RE.search(venue_text))
+    return bool(PREPRINT_KEYWORDS_RE.search(cleaned))
 
 
 def match_venue_entry(venue_text: str | None) -> VenueEntry | None:
@@ -629,9 +789,7 @@ def match_venue_entry(venue_text: str | None) -> VenueEntry | None:
     Note: Workshop venues return None here unless handled via match_canonical_venue_id
     so workshops are never confused with main conferences.
     """
-    if not venue_text:
-        return None
-    cleaned = venue_text.strip()
+    cleaned = _clean_venue_for_match(venue_text)
     if not cleaned or is_preprint_venue(cleaned):
         return None
     if is_workshop_venue(cleaned):
@@ -653,9 +811,7 @@ def match_venue_entry(venue_text: str | None) -> VenueEntry | None:
 
 def get_canonical_venue_id(venue_text: str | None) -> str | None:
     """Extract canonical venue identifier (e.g., 'CVPR', 'CVPRW', 'TPAMI')."""
-    if not venue_text:
-        return None
-    cleaned = venue_text.strip()
+    cleaned = _clean_venue_for_match(venue_text)
     if not cleaned or is_preprint_venue(cleaned):
         return None
     if is_workshop_venue(cleaned):

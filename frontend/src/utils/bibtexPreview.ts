@@ -55,6 +55,7 @@ const PROTECTED_PROPER_NOUNS = new Set([
   "moore",
   "penrose",
   "turing",
+  "nash",
   "boolean",
   "transformer",
   "transformers",
@@ -146,19 +147,27 @@ export function protectTitleCaseClient(title: string): string {
   let plain = "";
   let braceDepth = 0;
   let inMath = false;
+  let prevWasClosingBrace = false;
 
-  const flushPlain = () => {
+  const flushPlain = (leftBraced: boolean, rightBraced: boolean) => {
     if (!plain) return;
-    out += plain.replace(/[A-Za-z0-9]+(?:[-+/][A-Za-z0-9]+)*\+*/g, (m) =>
-      protectCompoundToken(m)
-    );
+    const seg = plain;
     plain = "";
+    out += seg.replace(
+      /[A-Za-z0-9]+(?:[-+/][A-Za-z0-9]+)*\+*/g,
+      (m, offset: number) => {
+        if (leftBraced && offset === 0) return m;
+        if (rightBraced && offset + m.length === seg.length) return m;
+        return protectCompoundToken(m);
+      }
+    );
   };
 
   for (let i = 0; i < title.length; i++) {
     const ch = title[i];
     if (ch === "\\" && i + 1 < title.length) {
-      flushPlain();
+      flushPlain(prevWasClosingBrace, false);
+      prevWasClosingBrace = false;
       let end = i + 1;
       if (/[A-Za-z]/.test(title[end])) {
         while (end < title.length && /[A-Za-z]/.test(title[end])) end++;
@@ -170,29 +179,41 @@ export function protectTitleCaseClient(title: string): string {
       continue;
     }
     if (ch === "$" && braceDepth === 0) {
-      flushPlain();
+      flushPlain(prevWasClosingBrace, false);
+      prevWasClosingBrace = false;
       inMath = !inMath;
       out += ch;
       continue;
     }
     if (ch === "{") {
-      if (braceDepth === 0 && !inMath) flushPlain();
+      if (braceDepth === 0 && !inMath) {
+        flushPlain(prevWasClosingBrace, true);
+        prevWasClosingBrace = false;
+      }
       braceDepth++;
       out += ch;
       continue;
     }
     if (ch === "}") {
-      if (braceDepth > 0) braceDepth--;
+      if (braceDepth > 0) {
+        braceDepth--;
+        if (braceDepth === 0 && !inMath) {
+          prevWasClosingBrace = true;
+        }
+      }
       out += ch;
       continue;
     }
     if (braceDepth === 0 && !inMath) {
+      if (/\s/.test(ch) && !plain) {
+        prevWasClosingBrace = false;
+      }
       plain += ch;
     } else {
       out += ch;
     }
   }
-  flushPlain();
+  flushPlain(prevWasClosingBrace, false);
   return out;
 }
 

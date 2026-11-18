@@ -20,6 +20,7 @@ from bibcanon.core.normalizer import (
     extract_doi_from_text,
     extract_entry_features,
     extract_year,
+    is_template_placeholder,
     normalize_title,
 )
 from bibcanon.core.scorer import elect_and_classify
@@ -83,6 +84,27 @@ async def verify_single_entry(
 ) -> EntryAuditResult:
     """Verify a single ParsedBibEntry end-to-end (discovery -> scoring/election -> publisher BibTeX)."""
     cfg = config or client.config
+    if is_template_placeholder(parsed_entry) and not override_query_title:
+        return EntryAuditResult(
+            cite_key=parsed_entry.cite_key,
+            entry_index=parsed_entry.entry_index,
+            span_start=parsed_entry.span_start,
+            span_end=parsed_entry.span_end,
+            original_bibtex=parsed_entry.raw_bibtex,
+            original_fields=parsed_entry.fields,
+            status=VerificationStatus.SUSPECTED_HALLUCINATION,
+            confidence=0.0,
+            warnings=[
+                AuditWarning(
+                    code=WarningCode.FALSE_PUBLISHED_VENUE,
+                    severity="warning",
+                    message="检测到 LaTeX 模板自带占位示例条目 (FirstName / Frobnication)，非真实论文",
+                )
+            ],
+            decision="keep_original",
+            search_links=build_search_links(parsed_entry.fields.get("title", "")),
+        )
+
     features = extract_entry_features(parsed_entry)
 
     if override_query_title and override_query_title.strip():

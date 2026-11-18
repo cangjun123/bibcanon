@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 from rapidfuzz import fuzz
 
@@ -135,6 +136,21 @@ def score_candidate(orig: ExtractedEntryFeatures, cand: CandidateRecord) -> Cand
                 else 0.0
             )
         s_author = 0.5 * first_match + 0.5 * (overlap * 100.0)
+        # Corporate / consortium author fallback (e.g. `author = {Team, Chameleon}` on exact arXiv/DOI match)
+        if (
+            s_author < 85.0
+            and r_basic >= 96.0
+            and any(
+                kw in orig.raw_authors.lower()
+                for kw in ("team", "consortium", "collaboration")
+            )
+            and (
+                (orig.arxiv_id and cand.arxiv_id and orig.arxiv_id.lower() == cand.arxiv_id.lower())
+                or (orig.doi and cand.doi and orig.doi.lower() == cand.doi.lower())
+            )
+        ):
+            s_author = 90.0
+            first_ratio = 90.0
 
     # Year score
     if orig.year is None or cand.matched_year is None:
@@ -257,6 +273,46 @@ def merge_equivalent_candidates(candidates: list[CandidateRecord]) -> list[Candi
         if not placed:
             merged.append(cand.model_copy(deep=True))
     return merged
+
+
+def _fuzzy_unlisted_venue_match(
+    orig_venue: str,
+    cand_venue: str | None,
+    orig_doi: str | None = None,
+    cand_doi: str | None = None,
+) -> bool:
+    """Match unlisted conference/journal names across full vs ISO/DBLP abbreviated forms."""
+    if orig_doi and cand_doi and orig_doi.lower() == cand_doi.lower():
+        return True
+    if not cand_venue:
+        return False
+
+    norm_o = normalize_title(orig_venue)
+    norm_c = normalize_title(cand_venue)
+    if not norm_o or not norm_c:
+        return False
+    if fuzz.token_set_ratio(norm_o, norm_c) >= 80.0:
+        return True
+
+    # Parenthetical acronym match, e.g. "... World Forum on IoT (WF-IoT)" vs DBLP "WF-IoT"
+    for paren in re.findall(r"\(([A-Za-z0-9\-]{2,15})\)", orig_venue):
+        if normalize_title(paren) == norm_c:
+            return True
+    for paren in re.findall(r"\(([A-Za-z0-9\-]{2,15})\)", cand_venue):
+        if normalize_title(paren) == norm_o:
+            return True
+
+    # Prefix abbreviation match, e.g. "ieee sens j" vs "ieee sensors journal"
+    words_o = [w for w in norm_o.split() if w not in {"the", "of", "on", "in", "and", "for"}]
+    words_c = [w for w in norm_c.split() if w not in {"the", "of", "on", "in", "and", "for"}]
+    shorter, longer = (words_o, words_c) if len(words_o) <= len(words_c) else (words_c, words_o)
+    if len(shorter) >= 2 and all(
+        any(lw.startswith(sw) or sw.startswith(lw) for lw in longer)
+        for sw in shorter
+    ):
+        return True
+
+    return False
 
 
 def _branch2_sort_key(cand: CandidateRecord) -> tuple[int, int, int, int, float]:
@@ -441,12 +497,12 @@ def elect_and_classify(
                     if c.canonical_venue_id == orig.canonical_venue_id
                 ]
             else:
-                norm_orig_v = normalize_title(orig.raw_venue)
                 venue_matches = [
                     c
                     for c in formal_cands
-                    if fuzz.token_set_ratio(norm_orig_v, normalize_title(c.matched_venue or ""))
-                    >= 85.0
+                    if _fuzzy_unlisted_venue_match(
+                        orig.raw_venue, c.matched_venue, orig.doi, c.doi
+                    )
                 ]
 
             if venue_matches:

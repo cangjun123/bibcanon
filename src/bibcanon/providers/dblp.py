@@ -109,10 +109,10 @@ def parse_dblp_hit(info: dict[str, Any]) -> CandidateRecord | None:
 
     arxiv_id: str | None = None
     if venue_str.lower() == "corr":
-        arxiv_id = extract_arxiv_id_from_text(str(info.get("volume", "")))
+        arxiv_id = extract_arxiv_id_from_text(str(info.get("volume", "")), require_context=False)
     if not arxiv_id:
         for u in ee_urls:
-            arxiv_id = extract_arxiv_id_from_text(u)
+            arxiv_id = extract_arxiv_id_from_text(u, require_context=True)
             if arxiv_id:
                 break
 
@@ -122,7 +122,9 @@ def parse_dblp_hit(info: dict[str, Any]) -> CandidateRecord | None:
     canonical_vid = get_canonical_venue_id(venue_str) if tier != "PREPRINT" else None
 
     entry_type = "misc"
-    if tier == "JOURNAL":
+    if dblp_type == "Books and Theses":
+        entry_type = "book"
+    elif tier == "JOURNAL":
         entry_type = "article"
     elif tier in {"MAIN_CONF", "WORKSHOP"}:
         entry_type = "inproceedings"

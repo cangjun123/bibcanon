@@ -44,7 +44,8 @@ async def _fetch_neurips_proceedings_bib(
     noise_blacklist: list[str] | None = None,
 ) -> tuple[str, str, dict[str, str]] | None:
     try:
-        if nips_url.lower().endswith(".bib"):
+        low_url = nips_url.lower()
+        if low_url.endswith(".bib"):
             bib_resp = await client.get(nips_url, allow_404=True)
             if bib_resp.status_code == 200 and "@" in bib_resp.text:
                 etype, _, raw_fields = parse_single_bibtex_block(bib_resp.text)
@@ -52,6 +53,34 @@ async def _fetch_neurips_proceedings_bib(
                 if cleaned.get("title"):
                     return "NeurIPS Proceedings", etype, cleaned
             return None
+
+        # Convert direct NeurIPS PDF URLs (e.g. .../file/<hash>-Paper-Conference.pdf or -Paper.pdf)
+        # straight to their sibling -Bibtex*.bib URL without downloading multi-MB PDFs!
+        if low_url.endswith(".pdf") and "/file/" in low_url:
+            direct_bib_candidates = [
+                re.sub(r"-Paper(-[^/.]+)?\.pdf$", r"-Bibtex\1.bib", nips_url, flags=re.I),
+                re.sub(r"-Paper(-[^/.]+)?\.pdf$", "-Bibtex.bib", nips_url, flags=re.I),
+            ]
+            for cand_bib_url in dict.fromkeys(direct_bib_candidates):
+                if cand_bib_url != nips_url:
+                    bib_resp = await client.get(cand_bib_url, allow_404=True)
+                    if bib_resp.status_code == 200 and "@" in bib_resp.text:
+                        etype, _, raw_fields = parse_single_bibtex_block(bib_resp.text)
+                        cleaned = sanitize_publisher_fields(
+                            raw_fields, noise_blacklist=noise_blacklist
+                        )
+                        if cleaned.get("title"):
+                            return "NeurIPS Proceedings", etype, cleaned
+
+            # Fallback to corresponding /hash/<hash>-Abstract*.html page instead of fetching PDF
+            nips_url = re.sub(
+                r"/file/([a-f0-9]+)-Paper(-[^/.]+)?\.pdf$",
+                r"/hash/\1-Abstract\2.html",
+                nips_url,
+                flags=re.I,
+            )
+            if nips_url.lower().endswith(".pdf"):
+                return None
 
         page_resp = await client.get(nips_url, allow_404=True)
         if page_resp.status_code != 200:

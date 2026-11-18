@@ -30,6 +30,8 @@ _PREFERRED_FIELD_ORDER: tuple[str, ...] = (
     "year",
     "month",
     "publisher",
+    "institution",
+    "school",
     "organization",
     "address",
     "location",
@@ -62,6 +64,8 @@ _COMPACT_STRIP_FIELDS: frozenset[str] = frozenset(
         "issn",
         "pdf",
         "numpages",
+        "keywords",
+        "issue_date",
     }
 )
 
@@ -227,22 +231,31 @@ def apply_title_case_protection(title: str) -> str:
     i = 0
     n = len(title)
 
-    def flush_plain() -> None:
+    def flush_plain(left_braced: bool, right_braced: bool) -> None:
         if not plain_buf:
             return
         segment = "".join(plain_buf)
         plain_buf.clear()
-        protected_seg = _WORD_OR_COMPOUND_RE.sub(
-            lambda m: _protect_compound_token(m.group(0)),
-            segment,
-        )
+
+        def _replacer(m: re.Match[str]) -> str:
+            # Skip wrapping fragments already attached to an adjacent {...} group (e.g. DeepLab{V3}, {P}oly{G}en)
+            if left_braced and m.start() == 0:
+                return m.group(0)
+            if right_braced and m.end() == len(segment):
+                return m.group(0)
+            return _protect_compound_token(m.group(0))
+
+        protected_seg = _WORD_OR_COMPOUND_RE.sub(_replacer, segment)
         result.append(protected_seg)
+
+    prev_was_closing_brace = False
 
     while i < n:
         ch = title[i]
         if ch == "\\" and i + 1 < n:
             # LaTeX command/escape: flush plain buffer and keep command sequence intact
-            flush_plain()
+            flush_plain(prev_was_closing_brace, False)
+            prev_was_closing_brace = False
             cmd_start = i
             i += 1
             if title[i].isalpha():
@@ -254,7 +267,8 @@ def apply_title_case_protection(title: str) -> str:
             continue
 
         if ch == "$" and brace_depth == 0:
-            flush_plain()
+            flush_plain(prev_was_closing_brace, False)
+            prev_was_closing_brace = False
             in_math = not in_math
             result.append(ch)
             i += 1
@@ -262,7 +276,8 @@ def apply_title_case_protection(title: str) -> str:
 
         if ch == "{":
             if brace_depth == 0 and not in_math:
-                flush_plain()
+                flush_plain(prev_was_closing_brace, True)
+                prev_was_closing_brace = False
             brace_depth += 1
             result.append(ch)
             i += 1
@@ -271,17 +286,21 @@ def apply_title_case_protection(title: str) -> str:
         if ch == "}":
             if brace_depth > 0:
                 brace_depth -= 1
+                if brace_depth == 0 and not in_math:
+                    prev_was_closing_brace = True
             result.append(ch)
             i += 1
             continue
 
         if brace_depth == 0 and not in_math:
+            if ch.isspace() and not plain_buf:
+                prev_was_closing_brace = False
             plain_buf.append(ch)
         else:
             result.append(ch)
         i += 1
 
-    flush_plain()
+    flush_plain(prev_was_closing_brace, False)
     return "".join(result)
 
 

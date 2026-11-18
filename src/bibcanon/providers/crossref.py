@@ -92,7 +92,9 @@ def parse_crossref_item(item: dict[str, Any]) -> CandidateRecord | None:
                 ee_urls.append(u)
 
     entry_type = "misc"
-    if tier == "JOURNAL":
+    if cr_type.lower() in {"book", "monograph", "reference-book", "edited-book"}:
+        entry_type = "book"
+    elif tier == "JOURNAL":
         entry_type = "article"
     elif tier in {"MAIN_CONF", "WORKSHOP"}:
         entry_type = "inproceedings"

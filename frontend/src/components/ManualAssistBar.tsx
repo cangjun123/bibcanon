@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ClipboardPaste, ExternalLink, Loader2 } from "lucide-react";
+import { ClipboardPaste, ExternalLink, Loader2, X } from "lucide-react";
 import { EntryAuditResult } from "../types";
 
 interface ManualAssistBarProps {
@@ -11,10 +11,16 @@ export const ManualAssistBar: React.FC<ManualAssistBarProps> = ({
   entry,
   onPasteMerge,
 }) => {
-  const [expanded, setExpanded] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [pastedText, setPastedText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const links = entry.search_links || {};
+  const needsAttention =
+    entry.status === "SUSPECTED_HALLUCINATION" ||
+    entry.status === "METADATA_MISMATCH" ||
+    entry.status === "ERROR";
 
   const handleMerge = async () => {
     if (!pastedText.trim()) return;
@@ -23,32 +29,34 @@ export const ManualAssistBar: React.FC<ManualAssistBarProps> = ({
     try {
       await onPasteMerge(pastedText);
       setPastedText("");
-      setExpanded(false);
+      setModalOpen(false);
     } catch (err) {
-      setErrMsg(err instanceof Error ? err.message : "粘贴解析失败");
+      setErrMsg(err instanceof Error ? err.message : "解析粘贴文本失败");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const links = entry.search_links || {};
-
   return (
-    <div className="border-t border-slate-200 bg-slate-50 px-4 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-slate-500 mr-1">
-            半自动外部检索兜底:
-          </span>
+    <>
+      <footer
+        className={`flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-5 py-2.5 text-xs ${
+          needsAttention
+            ? "border-amber-200/80 bg-amber-50/40"
+            : "border-slate-200/80 bg-white"
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-3 text-slate-500">
+          <span>外部查证:</span>
           {links.google_scholar && (
             <a
               href={links.google_scholar}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-indigo-600 transition"
             >
-              🔍 Google Scholar
-              <ExternalLink className="h-3 w-3 text-slate-400" />
+              Google Scholar
+              <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
           )}
           {links.bing && (
@@ -56,10 +64,10 @@ export const ManualAssistBar: React.FC<ManualAssistBarProps> = ({
               href={links.bing}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-indigo-600 transition"
             >
-              🔍 Bing 搜索
-              <ExternalLink className="h-3 w-3 text-slate-400" />
+              Bing
+              <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
           )}
           {links.dblp && (
@@ -67,10 +75,10 @@ export const ManualAssistBar: React.FC<ManualAssistBarProps> = ({
               href={links.dblp}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-indigo-600 transition"
             >
-              🔍 DBLP
-              <ExternalLink className="h-3 w-3 text-slate-400" />
+              DBLP
+              <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
           )}
           {links.semantic_scholar && (
@@ -78,67 +86,84 @@ export const ManualAssistBar: React.FC<ManualAssistBarProps> = ({
               href={links.semantic_scholar}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-indigo-600 transition"
             >
-              🔍 Semantic Scholar
-              <ExternalLink className="h-3 w-3 text-slate-400" />
+              Semantic Scholar
+              <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
           )}
         </div>
 
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+          onClick={() => setModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1 font-medium text-slate-700 hover:bg-slate-100 transition"
         >
-          <ClipboardPaste className="h-3.5 w-3.5" />
-          {expanded
-            ? "收起外部 BibTeX 合并框"
-            : "粘贴外部 BibTeX 自动锁 Key 合并"}
+          <ClipboardPaste className="h-3.5 w-3.5 text-slate-500" />
+          粘贴外部 BibTeX 合并
         </button>
-      </div>
+      </footer>
 
-      {expanded && (
-        <div className="mt-2.5 rounded-md border border-indigo-200 bg-white p-3 shadow-sm">
-          <div className="mb-1.5 flex items-center justify-between text-xs text-slate-600">
-            <span>
-              粘贴从官网或 Google Scholar 复制的任意 BibTeX，系统将自动锁死原{" "}
-              <code className="rounded bg-slate-100 px-1 font-mono font-semibold text-indigo-700">
-                {entry.cite_key}
-              </code>{" "}
-              并完成去噪与安全转义：
-            </span>
-          </div>
-          <textarea
-            rows={4}
-            value={pastedText}
-            onChange={(e) => setPastedText(e.target.value)}
-            placeholder={`@inproceedings{any_external_key,\n  title={...},\n  author={...}\n}`}
-            className="w-full rounded border border-slate-300 p-2 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          {errMsg && (
-            <p className="mt-1 text-xs font-medium text-rose-600">{errMsg}</p>
-          )}
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setExpanded(false)}
-              className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={!pastedText.trim() || submitting}
-              onClick={handleMerge}
-              className="inline-flex items-center gap-1 rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
-              锁死 {entry.cite_key} 并合并采纳
-            </button>
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  粘贴外部 BibTeX 智能合并
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  自动锁死原键值{" "}
+                  <code className="font-mono font-semibold text-indigo-600">
+                    {entry.cite_key}
+                  </code>
+                  ，剔除垃圾字段并转义特殊字符
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <textarea
+              rows={6}
+              autoFocus
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              placeholder={`@inproceedings{any_key,\n  title={...},\n  author={...}\n}`}
+              className="mt-3.5 w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 font-mono text-xs text-slate-800 focus:border-indigo-500 focus:bg-white focus:outline-none"
+            />
+            {errMsg && (
+              <p className="mt-1.5 text-xs font-medium text-rose-600">
+                {errMsg}
+              </p>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="rounded-lg px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!pastedText.trim() || submitting}
+                onClick={handleMerge}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                合并并采纳
+              </button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };

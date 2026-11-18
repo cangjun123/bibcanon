@@ -31,15 +31,30 @@ _SPECIAL_CHAR_MAP = str.maketrans(
     }
 )
 
-_ARXIV_NEW_RE = re.compile(r"(?:arxiv\s*:\s*)?(\d{4}\.\d{4,5})(?:v\d+)?\b", re.IGNORECASE)
-_ARXIV_OLD_RE = re.compile(
-    r"\b([a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?\b", re.IGNORECASE
+_ARXIV_DOI_RE = re.compile(
+    r"10\.48550/arxiv\.(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?",
+    re.IGNORECASE,
 )
-_ARXIV_DOI_RE = re.compile(r"10\.48550/arxiv\.(\d{4}\.\d{4,5}|[a-z\-]+/\d{7})(?:v\d+)?", re.IGNORECASE)
+_ARXIV_URL_OR_PREFIX_RE = re.compile(
+    r"(?:arxiv\.org/(?:abs|pdf|html|bibtex)/|arxiv\s*:\s*|corr/abs[-/])"
+    r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?(?:\.pdf)?\b",
+    re.IGNORECASE,
+)
+_ARXIV_BARE_NEW_RE = re.compile(
+    r"(?<![A-Za-z0-9./\-])(\d{2})(\d{2})\.(\d{4,5})(?:v\d+)?(?![A-Za-z0-9./])"
+)
+_ARXIV_BARE_OLD_RE = re.compile(
+    r"(?<![A-Za-z0-9./\-])([a-z\-]+(?:\.[a-z]{2})?/\d{7})(?:v\d+)?(?![A-Za-z0-9./])",
+    re.IGNORECASE,
+)
 _DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)")
 _YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 _DBLP_AUTHOR_SUFFIX_RE = re.compile(r"\s+\d{4}$")
 _NAME_SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv"}
+_TEMPLATE_PLACEHOLDER_RE = re.compile(
+    r"\b(?:frobnicat(?:e|ion|able)|journal\s+of\s+foo|firstname\s+(?:lastname|alpher))\b",
+    re.IGNORECASE,
+)
 
 
 def strip_dblp_author_number(name: str) -> str:
@@ -150,20 +165,61 @@ def extract_author_surnames(raw_authors: str | list[str]) -> tuple[list[str], bo
     return surnames, has_et_al
 
 
-def extract_arxiv_id_from_text(text: str | None) -> str | None:
-    """Extract bare arXiv ID (without version suffix) from arbitrary text or URL."""
+def _is_valid_arxiv_yymm(yy_str: str, mm_str: str) -> bool:
+    """Validate YYMM for modern arXiv IDs (started 0704 in April 2007)."""
+    yy = int(yy_str)
+    mm = int(mm_str)
+    if not (7 <= yy <= 40 and 1 <= mm <= 12):
+        return False
+    if yy == 7 and mm < 4:
+        return False
+    return True
+
+
+def extract_arxiv_id_from_text(
+    text: str | None, *, require_context: bool = False
+) -> str | None:
+    """Extract bare arXiv ID (without version suffix) from text or URL.
+
+    When `require_context=True` (used for DOI, URL, booktitle, journal, note),
+    requires explicit arXiv prefix/domain/DOI so IEEE DOIs like `10.1109/CVPR52733.2024.01363`
+    or `10.1109/CVPR.2019.00686` are never misidentified as arXiv IDs.
+    """
     if not text:
         return None
     m_doi = _ARXIV_DOI_RE.search(text)
     if m_doi:
         return m_doi.group(1)
-    m_new = _ARXIV_NEW_RE.search(text)
-    if m_new:
-        return m_new.group(1)
-    m_old = _ARXIV_OLD_RE.search(text)
+    m_ctx = _ARXIV_URL_OR_PREFIX_RE.search(text)
+    if m_ctx:
+        cand_id = m_ctx.group(1)
+        if "." in cand_id and "/" not in cand_id:
+            yymm = cand_id.split(".", 1)[0]
+            if len(yymm) == 4 and yymm.isdigit() and not _is_valid_arxiv_yymm(yymm[:2], yymm[2:]):
+                return None
+        return cand_id
+
+    if require_context:
+        return None
+
+    for m_new in _ARXIV_BARE_NEW_RE.finditer(text):
+        yy_s, mm_s, seq_s = m_new.group(1), m_new.group(2), m_new.group(3)
+        if _is_valid_arxiv_yymm(yy_s, mm_s):
+            return f"{yy_s}{mm_s}.{seq_s}"
+
+    m_old = _ARXIV_BARE_OLD_RE.search(text)
     if m_old:
         return m_old.group(1)
     return None
+
+
+def is_template_placeholder(entry: ParsedBibEntry) -> bool:
+    """Return True if the entry is a built-in CVPR/ICCV/IEEE LaTeX template dummy entry."""
+    hay = " ".join(
+        str(entry.fields.get(k, ""))
+        for k in ("author", "title", "journal", "booktitle", "note")
+    )
+    return bool(_TEMPLATE_PLACEHOLDER_RE.search(hay))
 
 
 def extract_doi_from_text(text: str | None) -> str | None:
@@ -226,15 +282,22 @@ def extract_entry_features(entry: ParsedBibEntry) -> ExtractedEntryFeatures:
     year = extract_year(fields)
 
     # Extract arXiv ID following SPEC.md priority:
-    # eprint -> journal -> booktitle -> note -> howpublished -> doi -> url
+    # eprint (allows bare YYMM.NNNNN) -> journal/booktitle/note/howpublished/doi/url (requires arXiv context)
     arxiv_id: str | None = None
-    for fkey in ("eprint", "journal", "booktitle", "note", "howpublished", "doi", "url"):
-        val = fields.get(fkey)
-        if val:
-            candidate_arxiv = extract_arxiv_id_from_text(val)
-            if candidate_arxiv:
-                arxiv_id = candidate_arxiv
-                break
+    eprint_val = fields.get("eprint")
+    if eprint_val:
+        is_arxiv_eprint = fields.get("archiveprefix", "arxiv").strip().lower() in {"", "arxiv"}
+        if is_arxiv_eprint:
+            arxiv_id = extract_arxiv_id_from_text(eprint_val, require_context=False)
+
+    if not arxiv_id:
+        for fkey in ("journal", "booktitle", "note", "howpublished", "doi", "url"):
+            val = fields.get(fkey)
+            if val:
+                candidate_arxiv = extract_arxiv_id_from_text(val, require_context=True)
+                if candidate_arxiv:
+                    arxiv_id = candidate_arxiv
+                    break
 
     # Extract formal DOI (excluding 10.48550/arXiv.*)
     doi: str | None = None
