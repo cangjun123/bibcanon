@@ -216,6 +216,32 @@ def test_anti_hallucination_guardrails_and_network_error_distinction() -> None:
     assert out_wa.decision == "keep_original"
     assert any(w.code == WarningCode.AUTHOR_MISMATCH for w in out_wa.warnings)
 
+    # 2b. First author matches, but co-authors are fabricated -> MUST also trigger AUTHOR_MISMATCH!
+    bib_partial_fake_author = """@inproceedings{he2016partialfake,
+      title={Deep Residual Learning for Image Recognition},
+      author={He, Kaiming and Fake, Alice and Ghost, Bob},
+      booktitle={CVPR},
+      year={2016}
+    }"""
+    feat_pfa = extract_entry_features(parse_bib_content(bib_partial_fake_author).entries[0])
+    out_pfa = elect_and_classify(feat_pfa, [real_cand.model_copy(deep=True)])
+    assert out_pfa.status == VerificationStatus.METADATA_MISMATCH
+    assert out_pfa.decision == "keep_original"
+    assert any(w.code == WarningCode.AUTHOR_MISMATCH for w in out_pfa.warnings)
+
+    # 2c. Real co-authors, but first author swapped -> MUST also trigger AUTHOR_MISMATCH!
+    bib_swapped_first = """@inproceedings{zhang2016swapped,
+      title={Deep Residual Learning for Image Recognition},
+      author={Zhang, Xiangyu and He, Kaiming and Ren, Shaoqing and Sun, Jian},
+      booktitle={CVPR},
+      year={2016}
+    }"""
+    feat_sf = extract_entry_features(parse_bib_content(bib_swapped_first).entries[0])
+    out_sf = elect_and_classify(feat_sf, [real_cand.model_copy(deep=True)])
+    assert out_sf.status == VerificationStatus.METADATA_MISMATCH
+    assert out_sf.decision == "keep_original"
+    assert any(w.code == WarningCode.AUTHOR_MISMATCH for w in out_sf.warnings)
+
     # 3. Preprint-only paper falsely claiming ICCV -> METADATA_MISMATCH + FALSE_PUBLISHED_VENUE
     bib_false_venue = """@inproceedings{smith2024onlyarxiv,
       title={A Purely Unpublished Preprint on Neural Rendering},

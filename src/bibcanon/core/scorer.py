@@ -577,27 +577,91 @@ def elect_and_classify(
 
     winner = ordered[0]
 
-    # Post-election safety downgrades
+    # Post-election safety downgrades & fine-grained author/year diagnostics
+    is_corporate_team = any(
+        kw in orig.raw_authors.lower() for kw in ("team", "consortium", "collaboration")
+    )
     if not orig.author_surnames:
+        warnings.append(
+            AuditWarning(
+                code=WarningCode.AUTHOR_MISMATCH,
+                severity="warning",
+                message="原条目缺失作者信息，请人工核对候选记录作者列表",
+            )
+        )
         status = VerificationStatus.METADATA_MISMATCH
+    elif winner.matched_authors and not is_corporate_team:
+        win_surnames, _ = extract_author_surnames(winner.matched_authors)
+        if win_surnames and not any(w.code == WarningCode.AUTHOR_MISMATCH for w in warnings):
+            def _surname_matches(s1: str, s2: str) -> bool:
+                if fuzz.ratio(s1, s2) >= 82.0:
+                    return True
+                if min(len(s1), len(s2)) >= 4 and fuzz.partial_ratio(s1, s2) >= 90.0:
+                    return True
+                return False
+
+            first_ok = _surname_matches(orig.author_surnames[0], win_surnames[0])
+            unmatched_orig = [
+                os_
+                for os_ in orig.author_surnames
+                if not any(_surname_matches(os_, ws) for ws in win_surnames)
+            ]
+            if not first_ok:
+                warnings.append(
+                    AuditWarning(
+                        code=WarningCode.AUTHOR_MISMATCH,
+                        severity="warning",
+                        message=(
+                            f"第一作者不一致：原条目为 '{orig.author_surnames[0]}'，"
+                            f"官方记录第一作者为 '{winner.matched_authors[0]}'"
+                        ),
+                    )
+                )
+                status = VerificationStatus.METADATA_MISMATCH
+            elif unmatched_orig and (len(unmatched_orig) / len(orig.author_surnames)) > 0.2:
+                warnings.append(
+                    AuditWarning(
+                        code=WarningCode.AUTHOR_MISMATCH,
+                        severity="warning",
+                        message=(
+                            f"部分署名作者不在官方记录中 ({', '.join(unmatched_orig[:3])})，"
+                            f"官方作者为: {', '.join(winner.matched_authors[:4])}"
+                        ),
+                    )
+                )
+                status = VerificationStatus.METADATA_MISMATCH
 
     if has_invalid_doi or has_invalid_arxiv:
         status = VerificationStatus.METADATA_MISMATCH
 
+    year_diff_threshold = 1 if winner.venue_tier in {"MAIN_CONF", "WORKSHOP"} else 2
     if (
         not orig.is_preprint
         and orig.year is not None
         and winner.matched_year is not None
-        and abs(winner.matched_year - orig.year) >= 2
+        and abs(winner.matched_year - orig.year) >= year_diff_threshold
     ):
         warnings.append(
             AuditWarning(
                 code=WarningCode.YEAR_DISCREPANCY,
                 severity="warning",
-                message=f"原条目年份 ({orig.year}) 与出版记录年份 ({winner.matched_year}) 存在明显出入",
+                message=f"原条目年份 ({orig.year}) 与出版记录年份 ({winner.matched_year}) 不一致",
             )
         )
         status = VerificationStatus.METADATA_MISMATCH
+
+    if status == VerificationStatus.METADATA_MISMATCH and not any(
+        w.severity in {"error", "warning"} for w in warnings
+    ):
+        warnings.append(
+            AuditWarning(
+                code=WarningCode.AUTHOR_MISMATCH
+                if winner.score_breakdown.get("author_score", 100.0) < 75.0
+                else WarningCode.VENUE_DIFFERS_FROM_ORIGINAL,
+                severity="warning",
+                message=f"标题或元数据与候选记录存在一定差异（综合匹配度 {winner.score:.0f}%），请人工复核确认",
+            )
+        )
 
     top_five = ordered[:5]
     has_blocking_warning = any(w.severity in {"error", "warning"} for w in warnings)
