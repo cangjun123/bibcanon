@@ -3,8 +3,11 @@ import {
   cancelScanJob,
   clearCacheApi,
   createScanJob,
+  fetchAuthStatus,
   fetchBootstrap,
   fetchCacheStats,
+  loginApi,
+  logoutApi,
   pasteMergeEntry,
   renderExportBib,
   retrySingleEntry,
@@ -15,6 +18,7 @@ import {
 import { DiffWorkbench } from "./components/DiffWorkbench";
 import { EntryList } from "./components/EntryList";
 import { ImportModal } from "./components/ImportModal";
+import { LoginScreen } from "./components/LoginScreen";
 import { SettingsModal } from "./components/SettingsModal";
 import { TopToolbar } from "./components/TopToolbar";
 import {
@@ -26,6 +30,7 @@ import {
   StyleMode,
 } from "./types";
 import { isEntryAlreadyIdentical } from "./utils/bibtexPreview";
+import { copyTextToClipboard } from "./utils/clipboard";
 
 const DEFAULT_CONFIG: AppConfig = {
   polite_email: "",
@@ -49,6 +54,11 @@ const DEFAULT_CONFIG: AppConfig = {
 };
 
 export const App: React.FC = () => {
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(true);
+  const [cloudMode, setCloudMode] = useState(false);
+
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -160,25 +170,39 @@ export const App: React.FC = () => {
     [showToast]
   );
 
+  const loadBootstrap = useCallback(async () => {
+    const boot = await fetchBootstrap();
+    setConfig(boot.settings);
+    setCacheStats(boot.cache_stats);
+    setCloudMode(Boolean(boot.cloud_mode));
+    setStyleMode(boot.settings.default_style_mode);
+    setProtectTitleCase(boot.settings.default_protect_title_case);
+    if (boot.initial_bib_path && !boot.cloud_mode) {
+      launchJob({ bib_path: boot.initial_bib_path, force_refresh: false });
+    }
+  }, [launchJob]);
+
   useEffect(() => {
     let mounted = true;
-    fetchBootstrap()
-      .then((boot) => {
+    fetchAuthStatus()
+      .then(async (status) => {
         if (!mounted) return;
-        setConfig(boot.settings);
-        setCacheStats(boot.cache_stats);
-        setStyleMode(boot.settings.default_style_mode);
-        setProtectTitleCase(boot.settings.default_protect_title_case);
-        if (boot.initial_bib_path) {
-          launchJob({ bib_path: boot.initial_bib_path, force_refresh: false });
+        setAuthRequired(status.auth_required);
+        setAuthenticated(status.authenticated);
+        setCloudMode(status.cloud_mode);
+        if (status.authenticated) {
+          await loadBootstrap();
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setAuthChecking(false);
+      });
     return () => {
       mounted = false;
       if (unsubRef.current) unsubRef.current();
     };
-  }, [launchJob]);
+  }, [loadBootstrap]);
 
   const matchesFilterTab = useCallback(
     (entry: EntryAuditResult, tab: FilterTab): boolean => {
@@ -376,7 +400,7 @@ export const App: React.FC = () => {
         protect_title_case: protectTitleCase,
         decisions: buildDecisionsMap(),
       });
-      await navigator.clipboard.writeText(res.output_bibtex);
+      await copyTextToClipboard(res.output_bibtex);
       showToast(
         `已复制完整 .bib（更新 ${
           res.stats.accepted_count + res.stats.custom_count
@@ -468,6 +492,22 @@ export const App: React.FC = () => {
 
   const hasEntries = entries.length > 0;
 
+  if (authChecking) {
+    return <div className="min-h-screen bg-[#F8FAFC]" />;
+  }
+
+  if (authRequired && !authenticated) {
+    return (
+      <LoginScreen
+        onLogin={async (username, password) => {
+          await loginApi(username, password);
+          setAuthenticated(true);
+          await loadBootstrap();
+        }}
+      />
+    );
+  }
+
   return (
     <div
       onDragOver={(e) => e.preventDefault()}
@@ -486,6 +526,7 @@ export const App: React.FC = () => {
         isScanning={isScanning}
         progress={progress}
         sourcePath={sourcePath}
+        cloudMode={cloudMode}
         styleMode={styleMode}
         protectTitleCase={protectTitleCase}
         hasEntries={hasEntries}
@@ -508,12 +549,20 @@ export const App: React.FC = () => {
             .catch(() => {});
           setSettingsOpen(true);
         }}
+        onLogout={async () => {
+          await logoutApi();
+          if (unsubRef.current) unsubRef.current();
+          setEntries([]);
+          setJobId(null);
+          setAuthenticated(false);
+        }}
       />
 
       {!hasEntries ? (
         <ImportModal
           isModal={false}
           open={true}
+          cloudMode={cloudMode}
           initialPath={sourcePath}
           isScanning={isScanning}
           onStartScanContent={(content, force) =>
@@ -568,6 +617,7 @@ export const App: React.FC = () => {
       <ImportModal
         isModal={true}
         open={importModalOpen}
+        cloudMode={cloudMode}
         initialPath={sourcePath}
         isScanning={isScanning}
         onClose={() => setImportModalOpen(false)}

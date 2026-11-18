@@ -5,6 +5,7 @@ import {
   Download,
   FilePlus2,
   Loader2,
+  LogOut,
   Save,
   Settings,
   SlidersHorizontal,
@@ -49,6 +50,7 @@ interface TopToolbarProps {
   isScanning: boolean;
   progress: { completed: number; total: number };
   sourcePath: string | null;
+  cloudMode?: boolean;
   styleMode: StyleMode;
   protectTitleCase: boolean;
   hasEntries: boolean;
@@ -62,12 +64,14 @@ interface TopToolbarProps {
   onDownloadBib: () => void;
   onWriteLocalBib: () => void;
   onOpenSettings: () => void;
+  onLogout?: () => void;
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
   isScanning,
   progress,
   sourcePath,
+  cloudMode = false,
   styleMode,
   protectTitleCase,
   hasEntries,
@@ -81,6 +85,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onDownloadBib,
   onWriteLocalBib,
   onOpenSettings,
+  onLogout,
 }) => {
   const [formatMenuOpen, setFormatMenuOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -290,7 +295,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
                     <Download className="h-3.5 w-3.5 text-slate-500" />
                     下载 .bib 文件
                   </button>
-                  {sourcePath && (
+                  {sourcePath && !cloudMode && (
                     <button
                       type="button"
                       onClick={() => {
@@ -317,6 +322,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         >
           <Settings className="h-4 w-4" />
         </button>
+
+        {cloudMode && onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition"
+            title="退出登录"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </header>
   );

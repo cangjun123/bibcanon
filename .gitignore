@@ -45,6 +45,9 @@ frontend/dist/
 *.sqlite3
 *.db
 
+# Local private reference examples
+examples/
+
 # OS / Editor
 .DS_Store
 Thumbs.db

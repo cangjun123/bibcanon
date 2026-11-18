@@ -6,12 +6,13 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from bibcanon import __version__
+from bibcanon.server.auth import CloudSecurityConfig, is_request_authenticated
 from bibcanon.server.routes import JobManager, router
 from bibcanon.storage.cache import BibCache
 
@@ -36,13 +37,17 @@ def create_app(
     initial_bib_path: str | None = None,
     cache: BibCache | None = None,
     client_factory: Any = None,
+    cloud_security: CloudSecurityConfig | None = None,
+    max_retained_jobs: int = 50,
 ) -> FastAPI:
     """Create and configure the FastAPI application instance."""
     app = FastAPI(
-        title="bibcanon Local Workbench",
+        title="bibcanon Local & Cloud Workbench",
         version=__version__,
         description="Academic BibTeX verifier, preprint upgrader, and canonical publisher formatter",
     )
+
+    sec = cloud_security or CloudSecurityConfig(enabled=False)
 
     app.add_middleware(
         CORSMiddleware,
@@ -52,8 +57,24 @@ def create_app(
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def cloud_auth_middleware(request: Request, call_next):
+        if sec.enabled and request.url.path.startswith("/api/"):
+            public_paths = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
+            if request.url.path not in public_paths and not is_request_authenticated(request, sec):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "请先登录工作台 (Unauthorized)"},
+                )
+        return await call_next(request)
+
     app.state.initial_bib_path = initial_bib_path
-    app.state.job_manager = JobManager(cache=cache, client_factory=client_factory)
+    app.state.cloud_security = sec
+    app.state.job_manager = JobManager(
+        cache=cache,
+        client_factory=client_factory,
+        max_retained_jobs=max_retained_jobs,
+    )
 
     app.include_router(router)
 

@@ -93,6 +93,73 @@ bibcanon cache clear --scope all
 
 ---
 
+### 3. 云主机团队共享部署（推荐海外 2C2G 轻量云主机）
+
+`bibcanon` 内置专为课题组多人共享设计的 **`--cloud` 云端安全模式**：
+- 默认监听 `0.0.0.0:8765`，支持通过环境变量 `BIBCANON_USER` / `BIBCANON_PASS`（或 `--auth-user` / `--auth-pass`）配置访问账号与密码（若未指定密码则启动时自动生成随机密码；登录一次后浏览器保持 **30 天免密**）；
+- **磁盘隔离加固**：自动禁用读取和写回服务器本地磁盘路径（仅开放安全的上传/粘贴 `.bib` 与复制/下载 `.bib`），并在前端隐藏 API Key 明文；
+- **纯 HTTP 剪贴板兼容**：即使直接使用 `http://<云主机公网IP>:8765` 无证书访问，「复制完整 `.bib`」按钮依然正常工作；
+- **内存自动回收**：自动清理超期或超出上限的历史已完成任务，常驻运行内存稳定在 ~100 MB；全组共享 SQLite 30 天查询与 CVF 会议目录缓存。
+
+#### 快速启动（Ubuntu / Debian 云主机）
+
+```bash
+git clone https://github.com/cangjun123/bibcanon.git
+cd bibcanon
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+# 通过环境变量指定团队共享账号密码并启动云端模式
+export BIBCANON_USER="admin"
+export BIBCANON_PASS="your-strong-password"
+bibcanon serve --cloud --port 8765
+```
+
+#### 配置 `systemd` 后台常驻与开机自启（推荐）
+
+1. 创建仅 root 可读的凭据配置文件 `/etc/bibcanon.env`：
+
+```bash
+sudo install -m 600 /dev/null /etc/bibcanon.env
+sudo tee /etc/bibcanon.env >/dev/null <<'EOF'
+BIBCANON_USER=admin
+BIBCANON_PASS=your-strong-password
+EOF
+```
+
+2. 创建 `/etc/systemd/system/bibcanon.service`（将 `/opt/bibcanon` 替换为实际安装目录）：
+
+```ini
+[Unit]
+Description=bibcanon Shared BibTeX Verifier Workbench
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bibcanon
+EnvironmentFile=/etc/bibcanon.env
+ExecStart=/opt/bibcanon/.venv/bin/bibcanon serve --cloud --port 8765
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. 启用并启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now bibcanon
+sudo systemctl status bibcanon
+```
+
+在云厂商安全组 / 防火墙放行 TCP `8765` 端口后，组内成员直接通过浏览器访问 `http://<云主机公网IP>:8765` 登录即可使用。
+
+---
+
 ## 开发者构建与测试
 
 ```powershell

@@ -11,6 +11,7 @@ import { SAMPLE_DEMO_BIB } from "./TopToolbar";
 interface ImportModalProps {
   isModal: boolean;
   open: boolean;
+  cloudMode?: boolean;
   initialPath?: string | null;
   isScanning: boolean;
   onClose?: () => void;
@@ -21,6 +22,7 @@ interface ImportModalProps {
 export const ImportModal: React.FC<ImportModalProps> = ({
   isModal,
   open,
+  cloudMode = false,
   initialPath,
   isScanning,
   onClose,
@@ -28,7 +30,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   onStartScanPath,
 }) => {
   const [tab, setTab] = useState<"upload_paste" | "local_path">(
-    initialPath ? "local_path" : "upload_paste"
+    !cloudMode && initialPath ? "local_path" : "upload_paste"
   );
   const [pasteText, setPasteText] = useState("");
   const [localPath, setLocalPath] = useState(initialPath ?? "");
@@ -72,35 +74,37 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         )}
       </div>
 
-      {/* Mode Switcher */}
-      <div className="px-6 pt-4">
-        <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
-          <button
-            type="button"
-            onClick={() => setTab("upload_paste")}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
-              tab === "upload_paste"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <FileCode2 className="h-3.5 w-3.5" />
-            上传或粘贴 .bib (Overleaf)
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("local_path")}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
-              tab === "local_path"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <FolderOpen className="h-3.5 w-3.5" />
-            打开本地 .bib 路径
-          </button>
+      {/* Mode Switcher (local path tab hidden in cloud shared mode) */}
+      {!cloudMode && (
+        <div className="px-6 pt-4">
+          <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setTab("upload_paste")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                tab === "upload_paste"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <FileCode2 className="h-3.5 w-3.5" />
+              上传或粘贴 .bib (Overleaf)
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("local_path")}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                tab === "local_path"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              打开本地 .bib 路径
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="p-6 pt-4 space-y-4">
         {tab === "upload_paste" ? (
@@ -224,7 +228,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 type="text"
                 value={localPath}
                 onChange={(e) => setLocalPath(e.target.value)}
-                placeholder="例如: C:\Users\dell\Desktop\paper\main.bib"
+                placeholder="例如: D:\paper\references.bib 或 /home/user/paper/refs.bib"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/40 px-3.5 py-2.5 font-mono text-xs text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
               />
               <p className="mt-1.5 text-[11px] text-slate-500">

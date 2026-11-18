@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import socket
 import threading
 import webbrowser
@@ -31,6 +32,7 @@ from bibcanon.models import (
     WarningCode,
 )
 from bibcanon.server.app import create_app
+from bibcanon.server.auth import CloudSecurityConfig
 from bibcanon.storage.cache import BibCache
 
 app = typer.Typer(
@@ -166,46 +168,87 @@ def _find_available_port(host: str, preferred_port: int, max_tries: int = 20) ->
 def serve_cmd(
     bib_file: Annotated[
         Path | None,
-        typer.Argument(help="可选：启动后自动加载的本地 .bib 文件路径"),
+        typer.Argument(help="可选：启动后自动加载的本地 .bib 文件路径（仅本地单机模式可用）"),
     ] = None,
     port: Annotated[
         int,
-        typer.Option("--port", "-p", help="本地服务监听端口"),
+        typer.Option("--port", "-p", help="服务监听端口"),
     ] = 8765,
     host: Annotated[
+        str | None,
+        typer.Option("--host", help="监听地址（本地默认 127.0.0.1；开启 --cloud 时默认 0.0.0.0）"),
+    ] = None,
+    cloud: Annotated[
+        bool,
+        typer.Option(
+            "--cloud/--local",
+            help="启用云端团队共享模式（默认监听 0.0.0.0、开启账号密码保护、禁用服务器本地磁盘读写）",
+        ),
+    ] = False,
+    auth_user: Annotated[
         str,
-        typer.Option("--host", help="本地服务监听地址"),
-    ] = "127.0.0.1",
+        typer.Option("--auth-user", envvar="BIBCANON_USER", help="云端模式登录用户名"),
+    ] = "admin",
+    auth_pass: Annotated[
+        str,
+        typer.Option(
+            "--auth-pass",
+            envvar="BIBCANON_PASS",
+            help="云端模式登录密码（未指定时自动生成一次性随机密码）",
+        ),
+    ] = "",
     no_browser: Annotated[
         bool,
         typer.Option("--no-browser", help="启动时不自动打开浏览器"),
     ] = False,
 ) -> None:
-    """启动本地 FastAPI + Web Diff 审核工作台。"""
+    """启动 FastAPI + Web Diff 审核工作台（支持本地单机模式与 --cloud 云端共享模式）。"""
+    is_cloud = cloud or os.environ.get("BIBCANON_CLOUD", "").strip() in {"1", "true", "yes"}
+    effective_host = host or ("0.0.0.0" if is_cloud else "127.0.0.1")
+
     resolved_bib: str | None = None
-    if bib_file is not None:
+    if bib_file is not None and not is_cloud:
         p = bib_file.expanduser().resolve()
         if not p.exists() or not p.is_file():
             console.print(f"[bold red]错误:[/bold red] 指定的 .bib 文件不存在: {p}")
             raise typer.Exit(code=2)
         resolved_bib = str(p)
 
-    actual_port = _find_available_port(host, port)
+    actual_port = _find_available_port(effective_host, port)
     if actual_port != port:
         console.print(
             f"[yellow]提示:[/yellow] 端口 {port} 已被占用，自动切换至可用端口 [bold]{actual_port}[/bold]"
         )
 
-    url = f"http://{host}:{actual_port}"
-    console.print(f"[bold green]bibcanon Web 工作台启动中:[/bold green] {url}")
-    if resolved_bib:
-        console.print(f"[cyan]自动加载本地文件:[/cyan] {resolved_bib}")
+    display_host = "127.0.0.1" if effective_host == "0.0.0.0" else effective_host
+    url = f"http://{display_host}:{actual_port}"
 
-    if not no_browser:
+    sec = CloudSecurityConfig(
+        enabled=is_cloud,
+        username=auth_user,
+        password=auth_pass,
+    )
+
+    if is_cloud:
+        console.print(
+            f"[bold green]bibcanon 云端团队共享模式启动中:[/bold green] http://0.0.0.0:{actual_port} "
+            f"(登录用户名: [cyan]{sec.username}[/cyan])"
+        )
+        if sec.auto_generated_password:
+            console.print(
+                f"[bold yellow]未配置 BIBCANON_PASS，本次启动自动生成随机密码:[/bold yellow] "
+                f"[bold white]{sec.password}[/bold white]"
+            )
+    else:
+        console.print(f"[bold green]bibcanon 本地工作台启动中:[/bold green] {url}")
+        if resolved_bib:
+            console.print(f"[cyan]自动加载本地文件:[/cyan] {resolved_bib}")
+
+    if not no_browser and not is_cloud:
         threading.Timer(0.9, lambda: webbrowser.open(url)).start()
 
-    fastapi_app = create_app(initial_bib_path=resolved_bib)
-    uvicorn.run(fastapi_app, host=host, port=actual_port, log_level="warning")
+    fastapi_app = create_app(initial_bib_path=resolved_bib, cloud_security=sec)
+    uvicorn.run(fastapi_app, host=effective_host, port=actual_port, log_level="warning")
 
 
 @app.command("check")

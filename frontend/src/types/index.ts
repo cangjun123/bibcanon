@@ -103,8 +103,17 @@ export interface CacheStats {
   cvf_toc_papers_count: number;
 }
 
+export interface AuthStatusResponse {
+  auth_required: boolean;
+  authenticated: boolean;
+  cloud_mode: boolean;
+  username: string | null;
+}
+
 export interface BootstrapResponse {
   initial_bib_path: string | null;
+  cloud_mode?: boolean;
+  username?: string | null;
   settings: AppConfig;
   cache_stats: CacheStats;
 }

@@ -1,5 +1,6 @@
 import {
   AppConfig,
+  AuthStatusResponse,
   BootstrapResponse,
   CacheStats,
   CreateJobResponse,
@@ -22,6 +23,27 @@ async function handleJson<T>(res: Response): Promise<T> {
     throw new Error(detail);
   }
   return res.json() as Promise<T>;
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatusResponse> {
+  const res = await fetch("/api/auth/status");
+  return handleJson<AuthStatusResponse>(res);
+}
+
+export async function loginApi(
+  username: string,
+  password: string
+): Promise<{ authenticated: boolean; cloud_mode: boolean; username?: string }> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  return handleJson(res);
+}
+
+export async function logoutApi(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST" });
 }
 
 export async function fetchBootstrap(): Promise<BootstrapResponse> {
